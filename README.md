@@ -35,7 +35,11 @@ make TARGET_N3DS=1
 ```
 
 The result is `build/jp_3ds_en/sm64.jp.3dsx`. Copy it to the `/3ds/` folder of your SD card and start it
-from the Homebrew Launcher.
+from the Homebrew Launcher. The port targets the New Nintendo 3DS family (New 3DS, New 3DS XL, New 2DS XL).
+
+Sound requires the DSP firmware dump at `/3ds/dspfirm.cdc` on the SD card, like all homebrew that uses
+libctru's audio. Most custom firmware setups already have it; otherwise run
+[DSP1](https://github.com/zoogie/DSP1) once to create it. Without it the game runs silently.
 
 Options:
 
