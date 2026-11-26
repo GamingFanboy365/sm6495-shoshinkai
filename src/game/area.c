@@ -137,7 +137,14 @@ u32 get_mario_spawn_type(struct Object *o) {
     s32 i;
     const BehaviorScript *behavior = virtual_to_segmented(0x13, o->behavior);
 
+#ifdef AVOID_UB
+    // The table only has 18 entries. Reading the 19th is out of bounds: it is
+    // harmless on N64, but on ports it can match an unrelated behavior and
+    // make that object steal a warp node (e.g. the castle door's).
+    for (i = 0; i < (s32) ARRAY_COUNT(sWarpBhvSpawnTable); i++) {
+#else
     for (i = 0; i < 19; i++) {
+#endif
         if (behavior == sWarpBhvSpawnTable[i]) {
             return sSpawnTypeFromWarpBhv[i];
         }

@@ -171,6 +171,9 @@ static f32 get_water_level_below_shadow(struct Shadow *s) { // ShadeWaterCheck
 
     //! @bug Missing return statement. This compiles to return `waterLevel`
     //! incidentally.
+#ifdef AVOID_UB
+    return waterLevel;
+#endif
 }
 
 /**
@@ -707,6 +710,10 @@ static Gfx *create_shadow_player(f32 xPos, f32 yPos, f32 zPos, s16 shadowScale, 
 extern Gfx *create_shadow_below_xyz(f32 xPos, f32 yPos, f32 zPos, s16 shadowScale, u8 shadowSolidity,
                              s8 shadowType) { // ShadeDrawFunc (modified)
     Gfx *displayList; // not initialized as NULL
+#ifdef AVOID_UB
+    // Shadow types without a case below would return an uninitialized pointer
+    displayList = NULL;
+#endif
 
     // Since only 'gShadowAboveWaterOrLava' exists, it's the only one reset
     gShadowAboveWaterOrLava = FALSE;
