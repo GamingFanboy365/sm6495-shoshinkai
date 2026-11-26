@@ -186,4 +186,6 @@ s32 lvl_init_from_save_file(UNUSED s16 arg0, s32 levelNum);
 s32 lvl_set_current_level(UNUSED s16 arg0, s32 levelNum);
 void basic_update(UNUSED s16 *arg);
 
+void initiate_warp(s16 destLevel, s16 destArea, s16 destWarpNode, s32 arg3);
+
 #endif // LEVEL_UPDATE_H

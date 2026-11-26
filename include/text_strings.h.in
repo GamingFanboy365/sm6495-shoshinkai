@@ -113,6 +113,17 @@
 /**
  * Ending Peach cutscene text.
  */
+#ifdef TEXT_ENGLISH
+#define TEXT_FILE_MARIO_EXCLAMATION _("Mario!")
+#define TEXT_POWER_STARS_RESTORED _("The power of the Stars is restored to the castle...")
+#define TEXT_THANKS_TO_YOU _("...and it's all thanks to you!")
+#define TEXT_THANK_YOU_MARIO _("Thank you, Mario!")
+#define TEXT_SOMETHING_SPECIAL _("We have to do something special for you...")
+#define TEXT_LISTEN_EVERYBODY _("Listen, everybody,")
+#define TEXT_LETS_HAVE_CAKE _("let's bake a delicious cake...")
+#define TEXT_FOR_MARIO _("...for Mario...")
+#define TEXT_FILE_MARIO_QUESTION _("Mario?")
+#else
 #define TEXT_FILE_MARIO_EXCLAMATION _("マリオ！！")
 #define TEXT_POWER_STARS_RESTORED _("おしろにスターが　もどったのね")
 #define TEXT_THANKS_TO_YOU _("みんな　あなたのおかげだわ！")
@@ -122,6 +133,7 @@
 #define TEXT_LETS_HAVE_CAKE _("おいしいケーキを　やきましょう")
 #define TEXT_FOR_MARIO _("マリオの　ために・・・")
 #define TEXT_FILE_MARIO_QUESTION _("マリオ？")
+#endif
 
 #endif // TEXT_STRINGS_H
 

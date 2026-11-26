@@ -17,6 +17,40 @@ git clone https://github.com/96flashbacks/showfloor.git
 cd showfloor
 make
 ```
+## Nintendo 3DS port
+
+showfloor can also be built as a Nintendo 3DS homebrew application (`.3dsx`), using
+the [sm64_3ds](https://github.com/sm64-port/sm64_3ds) renderer/audio/input backends on top of
+[sm64-port](https://github.com/sm64-port/sm64-port). The 3DS build uses the English translation by default.
+
+Requirements:
+
+- [devkitPro](https://devkitpro.org/wiki/Getting_Started) with the `3ds-dev` group (devkitARM, libctru, citro3d, 3dstools, picasso)
+- `baserom.jp.z64` as for the N64 build, plus a Super Mario 64 (USA) ROM at `baserom.us.z64`
+  for the English font (not needed with `TEXT_LANG=jp`)
+
+```sh
+export DEVKITPRO=/opt/devkitpro
+make TARGET_N3DS=1
+```
+
+The result is `build/jp_3ds_en/sm64.jp.3dsx`. Copy it to the `/3ds/` folder of your SD card and start it
+from the Homebrew Launcher.
+
+Options:
+
+- `TEXT_LANG=jp` - keep the original Japanese text (output in `build/jp_3ds/`)
+- `N3DS_ANTIALIASING=0` - render at native resolution (faster on an Old 3DS; default `1`)
+- `N3DS_WIDE=1` - use the 800px wide top-screen mode (sharper; real New 3DS/3DS XL/2DS XL only, not Old 2DS or emulators)
+- `WIDESCREEN=0` - render in 4:3 instead of widescreen
+
+Controls: Circle Pad = Control Stick, A/B = A/B, R = Z, L = R, C-Stick or D-Pad = C Buttons, START = START.
+
+## English translation
+
+`TEXT_LANG=en` also works for N64 builds (`make TEXT_LANG=en`, output in `build/jp_en/`). The English font is
+read from `baserom.us.z64` at build time (`tools/extract_en_font.py`), and the translated text lives in `text/en/`.
+
 ## Patches
 
 If you just want to play the game, go to the Releases section and download a patch from Continuous Pre-releases for the newest build. A Japanese Super Mario 64 ROM is required for patching. Patches labeled with "HLE" run without issue on real hardware and most emulators. Patches without the "HLE" label use code from the U64 Aging Cartridge and only work on accurate emulators or real hardware.

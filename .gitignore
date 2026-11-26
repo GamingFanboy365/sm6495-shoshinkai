@@ -51,3 +51,5 @@ build/*
 .assets-local.txt
 **/.DS_Store
 *Zone.Identifier
+# Port builds
+build_*/

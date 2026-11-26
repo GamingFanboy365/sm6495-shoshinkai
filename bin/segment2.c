@@ -877,6 +877,14 @@ const Texture *const main_hud_lut[] = {
     texture_hud_char_mario_head, texture_hud_char_star, texture_hud_char_decimal_point, texture_hud_char_beta_key
 };
 
+#ifdef TEXT_ENGLISH
+// English dialog font, generated from the US ROM by tools/extract_en_font.py
+#include "text/en/font_en.inc.c"
+
+const Texture *const main_font_lut[] = {
+    FONT_EN_LUT
+};
+#else
 // Main small font print table 0x02008338-0x02008737
 const Texture *const main_font_lut[] = {
     texture_font_char_jp_0, texture_font_char_jp_1, texture_font_char_jp_2, texture_font_char_jp_3,
@@ -944,9 +952,14 @@ const Texture *const main_font_lut[] = {
     texture_font_char_jp_ellipsis, texture_font_char_jp_coin, texture_font_char_jp_star_filled, texture_font_char_jp_multiply,
     texture_font_char_jp_interpunct, texture_font_char_jp_star_hollow,                   0x0,                   0x0
 };
+#endif // TEXT_ENGLISH
 
 #include "text/debug_text.raw.inc.c"
+#ifdef TEXT_ENGLISH
+#include "text/en/define_text.inc.c"
+#else
 #include "text/jp/define_text.inc.c"
+#endif
 
 UNUSED static const u64 segment2_unused_0 = 0;
 
@@ -1292,6 +1305,7 @@ static const Lights1 Tani_light = gdSPDefLights1(
 
 // Tani_I_matrix
 static const Mtx matrix_identity = {
+#ifndef GBI_FLOATS
     {{0x00010000, 0x00000000,
       0x00000001, 0x00000000},
      {0x00000000, 0x00010000,
@@ -1300,10 +1314,17 @@ static const Mtx matrix_identity = {
       0x00000000, 0x00000000},
      {0x00000000, 0x00000000,
       0x00000000, 0x00000000}}
+#else
+    {{1.0f, 0.0f, 0.0f, 0.0f},
+    {0.0f, 1.0f, 0.0f, 0.0f},
+    {0.0f, 0.0f, 1.0f, 0.0f},
+    {0.0f, 0.0f, 0.0f, 1.0f}}
+#endif
 };
 
 // Tani_O_matrix
 static const Mtx matrix_fullscreen = {
+#ifndef GBI_FLOATS
     {{0x00000000, 0x00000000,
       0x00000000, 0x00000000},
      {0x00000000, 0xffff0000,
@@ -1312,6 +1333,12 @@ static const Mtx matrix_fullscreen = {
       (0 << 16) | (65536 * 2 / SCREEN_HEIGHT), 0x00000000},
      {0x00000000, 0x00000000,
       0x00000000, 0x00000000}}
+#else
+    {{2.0f / SCREEN_WIDTH, 0.0f, 0.0f, 0.0f},
+    {0.0f, 2.0f / SCREEN_HEIGHT, 0.0f, 0.0f},
+    {0.0f, 0.0f, -1.0f, 0.0f},
+    {-1.0f, -1.0f, -1.0f, 1.0f}}
+#endif
 };
 
 // Tani_draw_1squr
