@@ -379,6 +379,7 @@ static void seq_player_fade_to_target_volume(s32 player, FadeT fadeDuration, u8 
     seqPlayer->fadeRemainingFrames = fadeDuration;
 }
 
+#ifdef TARGET_N64
 /**
  * Called from threads: thread4_sound
  */
@@ -480,6 +481,22 @@ struct SPTask *create_next_audio_frame_task(void) {
     decrease_sample_dma_ttls();
     return gAudioTask;
 }
+#else
+struct SPTask *create_next_audio_frame_task(void) {
+    return NULL;
+}
+void create_next_audio_buffer(s16 *samples, u32 num_samples) {
+    gAudioFrameCount++;
+    if (sGameLoopTicked != 0) {
+        update_game_sound();
+        sGameLoopTicked = 0;
+    }
+    s32 writtenCmds;
+    synthesis_execute(gAudioCmdBuffers[0], &writtenCmds, samples, num_samples);
+    gAudioRandom = ((gAudioRandom + gAudioFrameCount) * gAudioFrameCount);
+    decrease_sample_dma_ttls();
+}
+#endif
 
 /**
  * Called from threads: thread5_game_loop

@@ -22,7 +22,9 @@
  */
 
 #define	_SHIFT(v, s)	((unsigned int)(v) << (s))
+#ifndef F3DEX_GBI_2E /* the port GBI defines the three-argument version */
 #define	_SHIFTR(v, s)	((unsigned int)(v) >> (s))
+#endif
 
 #define G_ON	(1)
 #define G_OFF	(0)

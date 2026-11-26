@@ -11,6 +11,12 @@
  *									  *
  **************************************************************************/
 
+#if !defined(TARGET_N64) && defined(F3DEX_GBI_2E)
+/* Ports (PC / 3DS) render through an F3DEX2-style display list interpreter,
+ * so they use the upstream decomp GBI with Fast3DEX2 Extended support. */
+#include "gbi_f3dex2e.h"
+#else
+
 #ifndef _GBI_H_
 #define	_GBI_H_
 
@@ -3742,3 +3748,5 @@ typedef union {
 
 
 #endif /* _GBI_H_ */
+
+#endif /* TARGET_N64 */

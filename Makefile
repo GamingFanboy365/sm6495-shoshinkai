@@ -15,6 +15,16 @@ DEFINES :=
 # These options can either be set by building with 'make SETTING=value'.
 # 'make clean' may be required first.
 
+# TARGET_N3DS - build a Nintendo 3DS homebrew port (.3dsx) instead of an N64 ROM
+#   1 - build for the 3DS (requires devkitARM, libctru and citro3d)
+#   0 - build for the N64 (default), or for a PC port when TARGET_N64=0
+TARGET_N3DS ?= 0
+$(eval $(call validate-option,TARGET_N3DS,0 1))
+
+ifeq ($(TARGET_N3DS),1)
+  TARGET_N64 := 0
+endif
+
 # Build for the N64 (turn this off for ports)
 TARGET_N64 ?= 1
 
@@ -36,14 +46,43 @@ OPT_FLAGS := -g
 
 TARGET := sm64.$(VERSION)
 
+# Ports render through an F3DEX2-style display list interpreter
+ifeq ($(TARGET_N64),0)
+  COMPILER := gcc
+  NON_MATCHING := 1
+  GRUCODE := f3dex2e
+  DEVELOP ?= 0
+  ifeq ($(TARGET_N3DS),0)
+    $(error The only supported port is the 3DS: build with TARGET_N3DS=1)
+  endif
+endif
+
+# TEXT_LANG - selects the language of the in-game text
+#   jp - original Japanese text (default for N64 builds)
+#   en - English translation (default for 3DS builds). The English font is
+#        taken from a Super Mario 64 (USA) ROM, placed at BASEROM_US.
+ifeq ($(TARGET_N3DS),1)
+  TEXT_LANG ?= en
+else
+  TEXT_LANG ?= jp
+endif
+$(eval $(call validate-option,TEXT_LANG,jp en))
+BASEROM_US ?= baserom.us.z64
+
+ifeq ($(TEXT_LANG),en)
+  DEFINES += TEXT_ENGLISH=1
+endif
+
 # GRUCODE - selects which RSP microcode to use.
 #   f3d_102695 - gspFast3D from Ultra 64 OS release 102695 (from U64 Aging Cartridge), incompatible with HLE plugins
 #   f3d_20E - gspFast3D from OS 2.0E (from bbgames's ostrees), compatible with HLE plugins
 GRUCODE ?= f3d_102695
-$(eval $(call validate-option,GRUCODE,f3d_102695 f3d_20E))
+$(eval $(call validate-option,GRUCODE,f3d_102695 f3d_20E f3dex2e))
 
 ifeq ($(GRUCODE),f3d_20E)
   DEFINES += FAST3D_20E=1
+else ifeq ($(GRUCODE),f3dex2e) # Fast3DEX2 Extended (for ports)
+  DEFINES += F3DEX_GBI_2E=1
 endif
 
 # DEVELOP - fake IS-Viewer presence and print normally disabled messages
@@ -75,6 +114,11 @@ else ifeq ($(COMPILER),gcc)
   NON_MATCHING := 1
   MIPSISET     := -mips3
   OPT_FLAGS    := -O2
+endif
+
+# OPT_FLAGS - for ports
+ifeq ($(TARGET_N64),0)
+  OPT_FLAGS := -O2
 endif
 
 
@@ -119,6 +163,7 @@ COLOR ?= 1
 ifeq ($(filter clean distclean,$(MAKECMDGOALS)),)
   $(info ==== Build Options ====)
   $(info Microcode:      $(GRUCODE))
+  $(info Text language:  $(TEXT_LANG))
   $(info Target:         $(TARGET))
   ifeq ($(COMPARE),1)
     $(info Compare ROM:    yes)
@@ -184,7 +229,15 @@ endif
 
 BUILD_DIR_BASE := build
 # BUILD_DIR is the location where all build artifacts are placed
-BUILD_DIR      := $(BUILD_DIR_BASE)/$(VERSION)
+ifeq ($(TARGET_N64),1)
+  BUILD_DIR    := $(BUILD_DIR_BASE)/$(VERSION)
+else
+  BUILD_DIR    := $(BUILD_DIR_BASE)/$(VERSION)_3ds
+endif
+ifeq ($(TEXT_LANG),en)
+  BUILD_DIR    := $(BUILD_DIR)_en
+endif
+EXE            := $(BUILD_DIR)/$(TARGET).3dsx
 ROM            := $(BUILD_DIR)/$(TARGET).z64
 ELF            := $(BUILD_DIR)/$(TARGET).elf
 LIBULTRA       := $(BUILD_DIR)/libultra.a
@@ -198,7 +251,12 @@ ACTOR_DIR      := actors
 LEVEL_DIRS     := $(patsubst levels/%,%,$(dir $(wildcard levels/*/header.h)))
 
 # Directories containing source files
-SRC_DIRS := src src/engine src/game src/audio src/menu src/buffers actors levels bin data assets asm lib sound
+SRC_DIRS := src src/engine src/game src/audio src/menu src/buffers actors levels bin data assets sound
+ifeq ($(TARGET_N64),1)
+  SRC_DIRS += asm lib
+else
+  SRC_DIRS += src/pc src/pc/gfx src/pc/audio src/pc/controller
+endif
 BIN_DIRS := bin
 
 ULTRA_SRC_DIRS := lib/src lib/src/math lib/asm lib/data
@@ -215,9 +273,20 @@ C_FILES           := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c)) $(LEVEL_C
 S_FILES           := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.s))
 ULTRA_C_FILES     := $(foreach dir,$(ULTRA_SRC_DIRS),$(wildcard $(dir)/*.c))
 GODDARD_C_FILES   := $(foreach dir,$(GODDARD_SRC_DIRS),$(wildcard $(dir)/*.c))
-ULTRA_S_FILES     := $(foreach dir,$(ULTRA_SRC_DIRS),$(wildcard $(dir)/*.s))
-LIBGCC_C_FILES    := $(foreach dir,$(LIBGCC_SRC_DIRS),$(wildcard $(dir)/*.c))
+ifeq ($(TARGET_N64),1)
+  ULTRA_S_FILES   := $(foreach dir,$(ULTRA_SRC_DIRS),$(wildcard $(dir)/*.s))
+  LIBGCC_C_FILES  := $(foreach dir,$(LIBGCC_SRC_DIRS),$(wildcard $(dir)/*.c))
+endif
 GENERATED_C_FILES := $(BUILD_DIR)/assets/mario_anim_data.c
+
+ifeq ($(TARGET_N64),0)
+  # Skyboxes are normally separate ROM segments; ports link them in directly
+  GENERATED_C_FILES += $(addprefix $(BUILD_DIR)/bin/,$(addsuffix _skybox.c,$(notdir $(basename $(wildcard textures/skyboxes/*.png)))))
+  # Ports only need libultra's math helpers; everything else is reimplemented in src/pc
+  ULTRA_C_FILES := $(addprefix lib/src/,alBnkfNew.c guLookAtRef.c guMtxF2L.c guNormalize.c guOrthoF.c guPerspectiveF.c guRotateF.c guScaleF.c guTranslateF.c)
+  ULTRA_C_FILES := $(filter $(wildcard lib/src/*.c),$(ULTRA_C_FILES))
+  C_FILES := $(filter-out src/game/main.c,$(C_FILES))
+endif
 
 # Sound files
 SOUND_BANK_FILES    := $(wildcard sound/sound_banks/*.json)
@@ -259,6 +328,8 @@ endif
 #==============================================================================#
 # Compiler Options                                                             #
 #==============================================================================#
+
+ifeq ($(TARGET_N64),1)
 
 IQUE_EGCS_PATH := $(TOOLS_DIR)/ique_egcs
 IQUE_LD_PATH := $(TOOLS_DIR)/ique_ld
@@ -343,6 +414,65 @@ endif
 # Prevent a crash with -sopt
 export LANG := C
 
+else # TARGET_N64
+
+INCLUDE_DIRS := include $(BUILD_DIR) $(BUILD_DIR)/include src .
+C_DEFINES := $(foreach d,$(DEFINES),-D$(d))
+DEF_INC_CFLAGS := $(foreach i,$(INCLUDE_DIRS),-I$(i)) $(C_DEFINES)
+
+ifeq ($(TARGET_N3DS),1)
+  ifeq ($(strip $(DEVKITPRO)),)
+    $(error Please set DEVKITPRO in your environment. export DEVKITPRO=<path to>/devkitpro)
+  endif
+  DEVKITARM ?= $(DEVKITPRO)/devkitARM
+  CROSS     := $(DEVKITARM)/bin/arm-none-eabi-
+  AS        := $(CROSS)as
+  CC        := $(CROSS)gcc
+  CXX       := $(CROSS)g++
+  LD        := $(CROSS)gcc
+  AR        := $(CROSS)ar
+  OBJDUMP   := $(CROSS)objdump
+  OBJCOPY   := $(CROSS)objcopy
+  CTRULIB   := $(DEVKITPRO)/libctru
+  PLATFORM_CFLAGS  := -DTARGET_N3DS -DARM11 -D__3DS__ -D_3DS -DosGetTime=n64_osGetTime \
+                      -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -mword-relocations \
+                      -fomit-frame-pointer -ffunction-sections -I$(CTRULIB)/include
+  PLATFORM_LDFLAGS := -specs=3dsx.specs -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft \
+                      -L$(CTRULIB)/lib -lcitro3d -lctru -lm
+  # N3DS_ANTIALIASING - render at 2x and downscale (smoother edges)
+  # N3DS_WIDE - use the 800px wide top screen mode (sharper; not on Old 2DS and not emulated by Citra/Azahar)
+  N3DS_ANTIALIASING ?= 1
+  N3DS_WIDE ?= 0
+  ifeq ($(N3DS_ANTIALIASING),1)
+    PLATFORM_CFLAGS += -DN3DS_USE_ANTIALIASING
+  endif
+  ifeq ($(N3DS_WIDE),1)
+    PLATFORM_CFLAGS += -DN3DS_USE_WIDE_800PX
+  endif
+endif
+
+PLATFORM_CFLAGS += -DNO_SEGMENTED_MEMORY
+ifneq ($(WIDESCREEN),0)
+  PLATFORM_CFLAGS += -DWIDESCREEN
+endif
+
+CC_CHECK := $(CC)
+CC_CHECK_CFLAGS := -fsyntax-only -fsigned-char -Wall -Wextra -Wno-format-security -Wno-missing-braces -D_LANGUAGE_C $(DEF_INC_CFLAGS) $(PLATFORM_CFLAGS)
+CFLAGS := $(OPT_FLAGS) -D_LANGUAGE_C $(DEF_INC_CFLAGS) $(PLATFORM_CFLAGS) -fno-strict-aliasing -fwrapv -fsigned-char
+ASFLAGS := -I include -I $(BUILD_DIR) $(foreach d,$(DEFINES),--defsym $(d))
+LDFLAGS := $(PLATFORM_LDFLAGS)
+
+# Prefer clang as C preprocessor if installed on the system
+ifneq (,$(call find-command,clang))
+  CPP      := clang
+  CPPFLAGS := -E -P -x c -Wno-trigraphs -D_LANGUAGE_ASSEMBLY $(DEF_INC_CFLAGS)
+else
+  CPP      := cpp
+  CPPFLAGS := -P -Wno-trigraphs -D_LANGUAGE_ASSEMBLY $(DEF_INC_CFLAGS)
+endif
+
+endif # TARGET_N64
+
 #==============================================================================#
 # Miscellaneous Tools                                                          #
 #==============================================================================#
@@ -395,7 +525,11 @@ endef
 # Main Targets                                                                 #
 #==============================================================================#
 
+ifeq ($(TARGET_N64),0)
+all: $(EXE)
+else
 all: $(ROM)
+endif
 ifeq ($(COMPARE),1)
 	@$(PRINT) "$(GREEN)Checking if ROM matches.. $(NO_COL)\n"
 	@$(SHA1SUM) --quiet -c $(TARGET).sha1 && $(PRINT) "$(TARGET): $(GREEN)OK$(NO_COL)\n" || ($(PRINT) "$(YELLOW)Building the ROM file has succeeded, but does not match the original ROM.\nThis is expected, and not an error, if you are making modifications.\nTo silence this message, use 'make COMPARE=0.' $(NO_COL)\n" && false)
@@ -432,10 +566,16 @@ ifeq ($(COMPILER),gcc)
   $(BUILD_DIR)/lib/src/math/%.o: CFLAGS += -fno-builtin
 endif
 
-TEXT_DIRS := text/$(VERSION)
+TEXT_DIRS := text/$(TEXT_LANG)
 # non-EU encoded text inserted into segment 0x02
-$(BUILD_DIR)/bin/segment2.o: $(BUILD_DIR)/text/$(VERSION)/define_text.inc.c
+$(BUILD_DIR)/bin/segment2.o: $(BUILD_DIR)/text/$(TEXT_LANG)/define_text.inc.c
 $(BUILD_DIR)/bin/segment2.o: $(BUILD_DIR)/text/debug_text.raw.inc.c
+ifeq ($(TEXT_LANG),en)
+  DEBUG_TEXT_SRC := text/en/debug_text.inc.c
+  $(BUILD_DIR)/bin/segment2.o: $(BUILD_DIR)/text/en/font_en.inc.c
+else
+  DEBUG_TEXT_SRC := text/debug_text.inc.c
+endif
 
 ALL_DIRS := $(BUILD_DIR) $(addprefix $(BUILD_DIR)/,$(SRC_DIRS) $(GODDARD_SRC_DIRS) $(ULTRA_SRC_DIRS) $(ULTRA_BIN_DIRS) $(LIBGCC_SRC_DIRS) $(BIN_DIRS) $(TEXTURE_DIRS) $(TEXT_DIRS) $(SOUND_SAMPLE_DIRS) $(addprefix levels/,$(LEVEL_DIRS)) rsp include) $(SZP_DIR) $(addprefix $(SZP_DIR)/,$(VERSION)) $(SOUND_BIN_DIR) $(SOUND_BIN_DIR)/sequences/$(VERSION)
 
@@ -477,6 +617,7 @@ $(BUILD_DIR)/%.ci4: %.ci4.png
 # Compressed Segment Generation                                                #
 #==============================================================================#
 
+ifeq ($(TARGET_N64),1)
 # Link segment file to resolve external labels
 # TODO: ideally this would be `-Trodata-segment=0x07000000` but that doesn't set the address
 $(BUILD_DIR)/%.elf: $(BUILD_DIR)/%.o
@@ -505,6 +646,7 @@ $(BUILD_DIR)/%.szp: $(BUILD_DIR)/%.bin
 $(BUILD_DIR)/%.szp.o: $(BUILD_DIR)/%.szp
 	$(call print,Converting szp to ELF:,$<,$@)
 	$(V)$(LD) -r -b binary $< -o $@
+endif # TARGET_N64
 
 
 #==============================================================================#
@@ -562,7 +704,7 @@ $(SOUND_BIN_DIR)/%.m64: $(SOUND_BIN_DIR)/%.o
 # Convert binary file to a comma-separated list of byte values for inclusion in C code
 $(BUILD_DIR)/%.inc.c: $(BUILD_DIR)/%
 	$(call print,Converting to C:,$<,$@)
-	$(V)hexdump -v -e '1/1 "0x%X,"' $< > $@
+	$(V)od -An -v -tx1 $< | sed -E 's/ +/ /g; s/ ([0-9a-f]{2})/0x\1,/g; s/^ //' > $@
 	$(V)echo >> $@
 
 # Generate animation data
@@ -586,7 +728,13 @@ $(BUILD_DIR)/include/text_menu_strings.h: include/text_menu_strings.h.in
 $(BUILD_DIR)/text/%/define_text.inc.c: text/define_text.inc.c text/%/dialogs.h
 	@$(PRINT) "$(GREEN)Preprocessing: $(BLUE)$@ $(NO_COL)\n"
 	$(V)$(CPP) $(CPPFLAGS) $< -o - -I text/$*/ | $(TEXTCONV) $(BUILD_DIR)/$(CHARMAP) - $@
-$(BUILD_DIR)/text/debug_text.raw.inc.c: text/debug_text.inc.c $(BUILD_DIR)/$(CHARMAP_DEBUG)
+# English dialog font, converted from the US ROM
+$(BUILD_DIR)/text/en/font_en.inc.c: $(TOOLS_DIR)/extract_en_font.py $(BASEROM_US)
+	$(call print,Extracting English font:,$(BASEROM_US),$@)
+	$(V)$(PYTHON) $(TOOLS_DIR)/extract_en_font.py $(BASEROM_US) $@
+$(BASEROM_US):
+	$(error The English text option (TEXT_LANG=en) needs a Super Mario 64 (USA) ROM at $(BASEROM_US). Provide one, or build with TEXT_LANG=jp)
+$(BUILD_DIR)/text/debug_text.raw.inc.c: $(DEBUG_TEXT_SRC) $(BUILD_DIR)/$(CHARMAP_DEBUG)
 	@$(PRINT) "$(GREEN)Preprocessing: $(BLUE)$@ $(NO_COL)\n"
 	$(V)$(CPP) $(CPPFLAGS) $< -o - -I text/$*/ | $(TEXTCONV) $(BUILD_DIR)/$(CHARMAP_DEBUG) - $@
 
@@ -662,6 +810,7 @@ $(BUILD_DIR)/%.o: %.s
 	$(call print,Assembling:,$<,$@)
 	$(V)$(CPP) $(CPPFLAGS) $< | $(AS) $(ASFLAGS) -MD $(BUILD_DIR)/$*.d -o $@
 
+ifeq ($(TARGET_N64),1)
 # Run linker script through the C preprocessor
 $(BUILD_DIR)/$(LD_SCRIPT): $(LD_SCRIPT)
 	$(call print,Preprocessing linker script:,$<,$@)
@@ -698,6 +847,35 @@ $(ROM): $(ELF)
 
 $(BUILD_DIR)/$(TARGET).objdump: $(ELF)
 	$(OBJDUMP) -D $< > $@
+
+else
+
+# 3DS vertex shader
+$(BUILD_DIR)/src/pc/gfx/shader.shbin.o: src/pc/gfx/shader.v.pica
+	$(call print,Assembling shader:,$<,$@)
+	$(V)$(DEVKITPRO)/tools/bin/picasso -o $(BUILD_DIR)/src/pc/gfx/shader.shbin $<
+	$(V)cd $(BUILD_DIR)/src/pc/gfx && $(DEVKITPRO)/tools/bin/bin2s shader.shbin | $(AS) -o shader.shbin.o
+
+$(BUILD_DIR)/src/pc/gfx/gfx_citro3d.o: $(BUILD_DIR)/src/pc/gfx/shader.shbin.o
+
+N3DS_ICON  ?= 3ds/icon.png
+N3DS_TITLE ?= Super Mario 64 - Shoshinkai 1995
+N3DS_DESC  ?= Shoshinkai 1995 demo recreation (showfloor)
+N3DS_AUTHOR ?= showfloor team
+
+$(BUILD_DIR)/$(TARGET).smdh: $(N3DS_ICON)
+	$(call print,Generating SMDH:,$<,$@)
+	$(V)$(DEVKITPRO)/tools/bin/smdhtool --create "$(N3DS_TITLE)" "$(N3DS_DESC)" "$(N3DS_AUTHOR)" $< $@
+
+$(ELF): $(O_FILES) $(ULTRA_O_FILES) $(GODDARD_O_FILES) $(BUILD_DIR)/src/pc/gfx/shader.shbin.o
+	@$(PRINT) "$(GREEN)Linking ELF file:  $(BLUE)$@ $(NO_COL)\n"
+	$(V)$(LD) -L $(BUILD_DIR) -o $@ $(O_FILES) $(BUILD_DIR)/src/pc/gfx/shader.shbin.o $(ULTRA_O_FILES) $(GODDARD_O_FILES) $(LDFLAGS) -Wl,-Map,$(BUILD_DIR)/$(TARGET).map
+
+$(EXE): $(ELF) $(BUILD_DIR)/$(TARGET).smdh
+	$(call print,Building 3DSX:,$<,$@)
+	$(V)$(DEVKITPRO)/tools/bin/3dsxtool $< $@ --smdh=$(BUILD_DIR)/$(TARGET).smdh
+
+endif # TARGET_N64
 
 
 

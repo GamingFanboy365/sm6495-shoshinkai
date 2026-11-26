@@ -192,6 +192,7 @@ void create_dl_ortho_matrix(void) {
               G_MTX_PROJECTION | G_MTX_MUL | G_MTX_NOPUSH)
 }
 
+#ifdef TARGET_N64
 static u8 *alloc_ia8_text_from_i1(u16 *in, s16 width, s16 height) {
     s32 inPos;
     u16 bitMask;
@@ -222,11 +223,36 @@ static u8 *alloc_ia8_text_from_i1(u16 *in, s16 width, s16 height) {
 
     return out;
 }
+#endif
+
+#ifndef TARGET_N64
+// Ports cache textures by address, so glyphs can't be unpacked into the
+// per-frame display list pool (the same address would hold a different glyph
+// later on). Unpack each glyph once into a static buffer instead.
+static u8 sUnpackedGlyphs[256][8 * 16];
+static u8 sUnpackedGlyphValid[256];
+
+static void *get_unpacked_glyph(u8 c, void *packedTexture) {
+    if (!sUnpackedGlyphValid[c]) {
+        const u8 *in = (const u8 *) packedTexture;
+        s32 i;
+        for (i = 0; i < 8 * 16; i++) {
+            sUnpackedGlyphs[c][i] = (in[i / 8] & (0x80 >> (i % 8))) ? 0xFF : 0x00;
+        }
+        sUnpackedGlyphValid[c] = TRUE;
+    }
+    return sUnpackedGlyphs[c];
+}
+#endif
 
 void render_generic_char(u8 c) {
     void **fontLUT = segmented_to_virtual(main_font_lut);
     void *packedTexture = segmented_to_virtual(fontLUT[c]);
+#ifndef TARGET_N64
+    void *unpackedTexture = get_unpacked_glyph(c, packedTexture);
+#else
     void *unpackedTexture = alloc_ia8_text_from_i1(packedTexture, 8, 16);
+#endif
 
     gDPPipeSync(gDisplayListHead++);
     gDPSetTextureImage(gDisplayListHead++, G_IM_FMT_IA, G_IM_SIZ_8b, 1,
@@ -239,6 +265,73 @@ void render_generic_char(u8 c) {
 #define CHAR_WIDTH_SPACE 5.0f
 #define CHAR_WIDTH_DEFAULT 10.0f
 
+#ifdef TEXT_ENGLISH
+void render_generic_char(u8 c);
+
+// Widths of the glyphs of the English (US) dialog font, as in the US version
+static const u8 sDialogCharWidthsEn[256] = {
+    7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  6,  6,  6,  6,  6,  6,
+    6,  6,  5,  6,  6,  5,  8,  8,  6,  6,  6,  6,  6,  5,  6,  6,
+    8,  7,  6,  6,  6,  5,  5,  6,  5,  5,  6,  5,  4,  5,  5,  3,
+    7,  5,  5,  5,  6,  5,  5,  5,  5,  5,  7,  7,  5,  5,  4,  4,
+    8,  6,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    8,  8,  8,  8,  7,  7,  6,  7,  7,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  4,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  5,  6,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    7,  5, 10,  5,  9,  8,  4,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  5,  7,  7,  6,  6,  8,  0,  8, 10,  6,  4, 10,  0,  0
+};
+#define CHAR_WIDTH_EN(c) ((f32) sDialogCharWidthsEn[(u8)(c)])
+
+#define DIALOG_CHAR_MULTI_THE 0xD1 // "the" is encoded as a single character
+#define DIALOG_CHAR_MULTI_YOU 0xD2 // "you" is encoded as a single character
+
+/**
+ * Renders an English character and moves the cursor past it, expanding the
+ * "the" and "you" multi-character codes.
+ */
+static void render_char_en(u8 c) {
+    static const u8 sMultiThe[] = { 0x37, 0x2B, 0x28 }; // t h e
+    static const u8 sMultiYou[] = { 0x3C, 0x32, 0x38 }; // y o u
+    const u8 *chars = &c;
+    s32 count = 1;
+    s32 i;
+
+    if (c == DIALOG_CHAR_MULTI_THE) {
+        chars = sMultiThe;
+        count = 3;
+    } else if (c == DIALOG_CHAR_MULTI_YOU) {
+        chars = sMultiYou;
+        count = 3;
+    }
+
+    for (i = 0; i < count; i++) {
+        if (chars[i] == DIALOG_CHAR_SPACE) {
+            create_dl_translation_matrix(MENU_MTX_NOPUSH, CHAR_WIDTH_EN(DIALOG_CHAR_SPACE), 0, 0);
+        } else {
+            render_generic_char(chars[i]);
+            create_dl_translation_matrix(MENU_MTX_NOPUSH, CHAR_WIDTH_EN(chars[i]), 0, 0);
+        }
+    }
+}
+
+static f32 get_char_width_en(u8 c) {
+    if (c == DIALOG_CHAR_MULTI_THE) {
+        return CHAR_WIDTH_EN(0x37) + CHAR_WIDTH_EN(0x2B) + CHAR_WIDTH_EN(0x28);
+    }
+    if (c == DIALOG_CHAR_MULTI_YOU) {
+        return CHAR_WIDTH_EN(0x3C) + CHAR_WIDTH_EN(0x32) + CHAR_WIDTH_EN(0x38);
+    }
+    return CHAR_WIDTH_EN(c);
+}
+#endif
+
 /**
  * Prints a generic white string.
  * In JP/EU a IA1 texture is used but in US a IA4 texture is used.
@@ -249,6 +342,25 @@ void print_generic_string(s16 x, s16 y, const u8 *str) {
     u8 lineNum = 1;
 
     create_dl_translation_matrix(MENU_MTX_PUSH, x, y, 0.0f);
+
+#ifdef TEXT_ENGLISH
+    // English text: proportional glyph widths, as in the US version
+    while (str[strPos] != DIALOG_CHAR_TERMINATOR) {
+        switch (CUR_CHAR) {
+            case DIALOG_CHAR_NEWLINE:
+                gSPPopMatrix(gDisplayListHead++, G_MTX_MODELVIEW);
+                create_dl_translation_matrix(MENU_MTX_PUSH, x, y - (lineNum * MAX_STRING_WIDTH), 0.0f);
+                lineNum++;
+                break;
+            default:
+                render_char_en(CUR_CHAR);
+                break;
+        }
+        strPos++;
+    }
+    gSPPopMatrix(gDisplayListHead++, G_MTX_MODELVIEW);
+    return;
+#endif
 
     while (str[strPos] != SPECIAL_CHAR(DIALOG_CHAR_TERMINATOR)) {
         switch (CUR_CHAR) {
@@ -382,6 +494,14 @@ s16 get_str_x_pos_from_center_scale(s16 centerPos, u8 *str, f32 scale) {
     s16 strPos = 0;
     f32 charsWidth = 0.0f;
     f32 spacesWidth = 0.0f;
+
+#ifdef TEXT_ENGLISH
+    while (str[strPos] != DIALOG_CHAR_TERMINATOR) {
+        charsWidth += get_char_width_en(str[strPos]);
+        strPos++;
+    }
+    return (f32) centerPos - (s16) (charsWidth / 2.0);
+#endif
 
     while (str[strPos] != DIALOG_CHAR_TERMINATOR) {
         //! EU checks for dakuten and handakuten despite dialog code unable to handle it
@@ -574,6 +694,18 @@ void render_star_count_dialog_text(s8 *xMatrix, s16 *linePos) {
     s8 tensDigit = gDialogVariable / 10;
     s8 onesDigit = gDialogVariable - (tensDigit * 10); // remainder
 
+#ifdef TEXT_ENGLISH
+    if (tensDigit != 0) {
+        render_generic_char(tensDigit);
+        create_dl_translation_matrix(MENU_MTX_NOPUSH, CHAR_WIDTH_EN(tensDigit), 0, 0);
+    }
+    render_generic_char(onesDigit);
+    create_dl_translation_matrix(MENU_MTX_NOPUSH, CHAR_WIDTH_EN(onesDigit), 0, 0);
+    (*linePos)++;
+    *xMatrix = 1;
+    return;
+#endif
+
     if (tensDigit != 0) {
         create_dl_translation_matrix(MENU_MTX_NOPUSH, 10 * *xMatrix, 0, 0);
         render_generic_char(tensDigit);
@@ -645,6 +777,18 @@ void handle_dialog_text_and_pages(struct DialogEntry *dialog) {
                 mark = DIALOG_MARK_HANDAKUTEN;
                 break;
 
+#ifdef TEXT_ENGLISH
+            // English text: no Japanese period/dakuten handling, proportional
+            // glyph widths, and lines are broken manually (as in the US version)
+            case DIALOG_CHAR_STAR_COUNT:
+                render_star_count_dialog_text(&xMatrix, &linePos);
+                break;
+
+            default:
+                render_char_en(strChar);
+                linePos++;
+                break;
+#else
             case SPECIAL_CHAR(DIALOG_CHAR_SPACE):
                 if (linePos != 0) {
                     xMatrix++;
@@ -675,8 +819,10 @@ void handle_dialog_text_and_pages(struct DialogEntry *dialog) {
                     gSPPopMatrix(gDisplayListHead++, G_MTX_MODELVIEW);
                     mark = DIALOG_MARK_NONE;
                 }
+#endif
         }
 
+#ifndef TEXT_ENGLISH
         if (linePos == 12) {
             if (str[strIndex + 1] == DIALOG_CHAR_PERIOD) {
                 adjust_pos_and_print_period_char(&xMatrix, &linePos);
@@ -702,6 +848,7 @@ void handle_dialog_text_and_pages(struct DialogEntry *dialog) {
                 handle_dialog_scroll_page_state(lineNum, totalLines, &pageState, &xMatrix, &linePos);
             }
         }
+#endif
 
         strIndex++;
     }
