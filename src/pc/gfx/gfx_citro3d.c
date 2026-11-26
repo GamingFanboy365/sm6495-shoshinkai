@@ -66,6 +66,12 @@ static int sCurShader = 0;
 static C3D_Tex sTexturePool[4096];
 static float sTexturePoolScaleS[4096];
 static float sTexturePoolScaleT[4096];
+// Sampler state per texture. C3D_TexInit resets a texture's filter and wrap
+// modes, so they are stored here and re-applied after every upload.
+static bool sTexturePoolInitialized[4096];
+static u8 sTexturePoolLinear[4096];
+static u8 sTexturePoolWrapS[4096];
+static u8 sTexturePoolWrapT[4096];
 static int sTextureIndex;
 static int sCurTex = 0;
 
@@ -410,6 +416,19 @@ static void performTexSwizzle(const u8* src, u32* dst, u32 w, u32 h)
     }
 }
 
+static uint32_t gfx_cm_to_opengl(uint32_t val) {
+    if (val & G_TX_CLAMP)
+         return GPU_CLAMP_TO_EDGE;
+    return (val & G_TX_MIRROR) ? GPU_MIRRORED_REPEAT : GPU_REPEAT;
+}
+
+static void apply_sampler_parameters(int id)
+{
+    GPU_TEXTURE_FILTER_PARAM filter = sTexturePoolLinear[id] ? GPU_LINEAR : GPU_NEAREST;
+    C3D_TexSetFilter(&sTexturePool[id], filter, filter);
+    C3D_TexSetWrap(&sTexturePool[id], sTexturePoolWrapS[id], sTexturePoolWrapT[id]);
+}
+
 static void gfx_citro3d_upload_texture(const uint8_t *rgba32_buf, int width, int height) {
     if(width < 8 || height < 8 || (width & (width - 1)) || (height & (height - 1)))
     {
@@ -456,20 +475,35 @@ static void gfx_citro3d_upload_texture(const uint8_t *rgba32_buf, int width, int
         sTexturePoolScaleT[sCurTex] = 1.f;
         performTexSwizzle(rgba32_buf, sTexBuf, width, height);
     }
-    C3D_TexInit(&sTexturePool[sCurTex], width, height, GPU_RGBA8);
+    // Free the previous image when a texture slot is reused, otherwise its
+    // memory would leak every time the texture cache is recycled.
+    if (sTexturePoolInitialized[sCurTex])
+    {
+        C3D_TexDelete(&sTexturePool[sCurTex]);
+        sTexturePoolInitialized[sCurTex] = false;
+    }
+    if (!C3D_TexInit(&sTexturePool[sCurTex], width, height, GPU_RGBA8))
+    {
+        printf("Texture alloc failed!\n");
+        return;
+    }
+    sTexturePoolInitialized[sCurTex] = true;
     C3D_TexUpload(&sTexturePool[sCurTex], sTexBuf);
     C3D_TexFlush(&sTexturePool[sCurTex]);
-}
-
-static uint32_t gfx_cm_to_opengl(uint32_t val) {
-    if (val & G_TX_CLAMP)
-         return GPU_CLAMP_TO_EDGE;
-    return (val & G_TX_MIRROR) ? GPU_MIRRORED_REPEAT : GPU_REPEAT;
+    apply_sampler_parameters(sCurTex);
+    for (int unit = 0; unit < 2; unit++)
+    {
+        if (sTexUnits[unit] == sCurTex)
+            C3D_TexBind(unit, &sTexturePool[sCurTex]);
+    }
 }
 
 static void gfx_citro3d_set_sampler_parameters(int tile, bool linear_filter, uint32_t cms, uint32_t cmt) {
-    C3D_TexSetFilter(&sTexturePool[sTexUnits[tile]], linear_filter ? GPU_LINEAR : GPU_NEAREST, linear_filter ? GPU_LINEAR : GPU_NEAREST);
-    C3D_TexSetWrap(&sTexturePool[sTexUnits[tile]], gfx_cm_to_opengl(cms), gfx_cm_to_opengl(cmt));
+    int id = sTexUnits[tile];
+    sTexturePoolLinear[id] = linear_filter;
+    sTexturePoolWrapS[id] = gfx_cm_to_opengl(cms);
+    sTexturePoolWrapT[id] = gfx_cm_to_opengl(cmt);
+    apply_sampler_parameters(id);
 }
 
 static void updateDepth()
@@ -669,7 +703,11 @@ static void renderTwoColorTris(float buf_vbo[], size_t buf_vbo_len, size_t buf_v
         }
         if(hasFog)
             vtxOffs += 4;
-        if(color0Constant)
+        // When only color 0 is constant it goes into the TexEnv constant and
+        // the vertices carry color 1. When both are constant, color 1 is the
+        // TexEnv constant (see updateShader above), so the vertices must
+        // still carry color 0; skipping it here would apply color 1 twice.
+        if(color0Constant && !color1Constant)
             vtxOffs += hasAlpha ? 4 : 3;
         if(hasColor)
         {

@@ -48,7 +48,7 @@ Options:
 - `N3DS_WIDE=1` - use the 800px wide top-screen mode (sharper; real New 3DS/3DS XL/2DS XL only, not Old 2DS or emulators)
 - `WIDESCREEN=0` - render in 4:3 instead of widescreen
 
-Controls: Circle Pad = Control Stick, A/B = A/B, R = Z, L = R, C-Stick or D-Pad = C Buttons, START = START.
+Controls: Circle Pad = Control Stick, A/B = A/B, R or ZL = Z, L or ZR = R (area map), C-Stick or D-Pad = C Buttons, START = START.
 
 ## English translation
 
